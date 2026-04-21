@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trade Image Generator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS for Excel/CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- html2canvas for image generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body class="bg-gray-100 p-8 flex flex-col md:flex-row gap-8 min-h-screen">
+
+    <!-- Controls Panel -->
+    <div class="w-full md:w-1/3 bg-white p-6 rounded-lg shadow-md flex flex-col gap-4 overflow-y-auto">
+        <h2 class="text-2xl font-bold mb-4">Trade Image Generator</h2>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Upload CSV/Excel</label>
+            <input type="file" id="fileUpload" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Month</label>
+                <input type="text" id="monthInput" value="MARCH" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:border-blue-500 focus:ring-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Year</label>
+                <input type="text" id="yearInput" value="2026" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:border-blue-500 focus:ring-blue-500">
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Trade Type</label>
+            <select id="tradeType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:border-blue-500 focus:ring-blue-500">
+                <option value="HZ">Hero-Zero</option>
+                <option value="INTRA">Intraday</option>
+                <option value="BTST">BTST</option>
+                <option value="ALL">Remaining Options</option>
+            </select>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Size</label>
+            <select id="sizeSelect" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-2 focus:border-blue-500 focus:ring-blue-500">
+                <option value="1200x628">1.91:1 (1200x628)</option>
+                <option value="1080x1080">1:1 (1080x1080)</option>
+                <option value="1080x1350">4:5 (1080x1350)</option>
+                <option value="1080x1920">16:9 (1080x1920)</option>
+            </select>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">Edit Table Values</label>
+            <div id="tableEditor" class="text-sm bg-gray-50 p-2 border rounded overflow-y-auto max-h-48">
+                <!-- Rows will be injected here -->
+            </div>
+            <button id="addRowBtn" class="mt-2 text-sm text-blue-600 hover:text-blue-800">+ Add Row</button>
+        </div>
+
+        <!-- Progress Bar Container -->
+        <div id="progressContainer" class="hidden mt-4">
+            <div class="flex justify-between mb-1">
+                <span class="text-sm font-medium text-blue-700" id="progressText">Processing...</span>
+                <span class="text-sm font-medium text-blue-700" id="progressPercent">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <button id="downloadBtn" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded hover:bg-blue-700 mt-4 transition-colors">
+            Download Image
+        </button>
+    </div>
+
+    <!-- Preview Area -->
+    <div class="w-full md:w-2/3 bg-white p-6 rounded-lg shadow-md overflow-auto flex justify-center items-center bg-gray-200">
+        <div id="previewContainer" class="relative overflow-hidden shadow-lg bg-black" style="width: 1200px; height: 628px; transform: scale(0.6); transform-origin: top left;">
+            <img id="bgImage" src="templates/HZ 4.png" class="absolute top-0 left-0 w-full h-full object-cover">
+
+            <!-- Dynamic Text Overlay -->
+            <div id="monthYearText" class="absolute text-center font-bold text-white uppercase tracking-wider" style="top: 30%; left: 0; right: 0; font-size: 40px; font-family: 'Arial', sans-serif;">
+                <span id="monthDisplay">MARCH</span> <span id="yearDisplay">2026</span>
+            </div>
+
+            <!-- Dynamic Table Overlay -->
+            <div id="tableOverlay" class="absolute" style="top: 50%; left: 0%; right: 0%;">
+                <table class="w-full text-left text-white font-semibold" style="font-family: 'Arial', sans-serif;">
+                    <tbody id="tableBodyDisplay">
+                        <!-- Rows injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TEMPLATE_MAP = {
+            "HZ": {
+                "1200x628": "templates/HZ 4.png",
+                "1080x1080": "templates/HZ -2.png",
+                "1080x1350": "templates/HZ-1.png",
+                "1080x1920": "templates/HZ-1, 9-16.png"
+            },
+            "INTRA": {
+                "1200x628": "templates/OP-3-INTRA.png",
+                "1080x1080": "templates/OP-2-INTRA.png",
+                "1080x1350": "templates/OP-1-INTRA.png",
+                "1080x1920": "templates/HZ-1, 9-16-1.png"
+            },
+            "BTST": {
+                "1200x628": "templates/OP-2-BTST-1.png",
+                "1080x1080": "templates/OP-2-BTST.png",
+                "1080x1350": "templates/OP-1-BTST.png",
+                "1080x1920": "templates/HZ-1, 9-16-2.png"
+            },
+            "ALL": {
+                "1200x628": "templates/OP-3-ALL.png",
+                "1080x1080": "templates/OP-2-ALL.png",
+                "1080x1350": "templates/OP-1-ALL.png",
+                "1080x1920": "templates/HZ-1, 9-16-3.png"
+            }
+        };
+
+        // UI Elements
+        const tradeTypeSelect = document.getElementById('tradeType');
+        const sizeSelect = document.getElementById('sizeSelect');
+        const bgImage = document.getElementById('bgImage');
+        const previewContainer = document.getElementById('previewContainer');
+
+        const monthYearText = document.getElementById('monthYearText');
+        const tableOverlay = document.getElementById('tableOverlay');
+
+        // Progress Bar UI Elements
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const progressPercent = document.getElementById('progressPercent');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        function updateProgress(percent, text) {
+            progressBar.style.width = percent + '%';
+            progressPercent.textContent = percent + '%';
+            if (text) progressText.textContent = text;
+        }
+
+        function showProgress() {
+            progressContainer.classList.remove('hidden');
+            downloadBtn.disabled = true;
+            downloadBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+
+        function hideProgress() {
+            setTimeout(() => {
+                progressContainer.classList.add('hidden');
+                downloadBtn.disabled = false;
+                downloadBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                updateProgress(0, 'Processing...');
+            }, 500); // Small delay to let user see 100%
+        }
+
+        function updateTemplate() {
+            const type = tradeTypeSelect.value;
+            const size = sizeSelect.value;
+
+            // Update Image
+            const imgPath = TEMPLATE_MAP[type][size];
+            if (imgPath) {
+                bgImage.src = imgPath;
+            }
+
+            // Update Container Size
+            const [width, height] = size.split('x');
+            previewContainer.style.width = width + 'px';
+            previewContainer.style.height = height + 'px';
+
+            // Adjust scaling so it fits in the view
+            const scale = Math.min(600 / parseInt(width), 600 / parseInt(height));
+            previewContainer.style.transform = `scale(${scale})`;
+
+            // Dynamic Positioning based on size
+            if (size === "1200x628") {
+                monthYearText.style.top = "40%";
+                monthYearText.style.fontSize = "40px";
+                tableOverlay.style.top = "60%";
+                tableOverlay.style.left = "0%";
+                tableOverlay.style.right = "0%";
+            } else if (size === "1080x1080") {
+                monthYearText.style.top = "32%";
+                monthYearText.style.fontSize = "45px";
+                tableOverlay.style.top = "50%";
+                tableOverlay.style.left = "0%";
+                tableOverlay.style.right = "0%";
+            } else if (size === "1080x1350") {
+                monthYearText.style.top = "25%";
+                monthYearText.style.fontSize = "50px";
+                tableOverlay.style.top = "42%";
+                tableOverlay.style.left = "0%";
+                tableOverlay.style.right = "0%";
+            } else if (size === "1080x1920") {
+                monthYearText.style.top = "11.2%";
+                monthYearText.style.fontSize = "55px";
+                tableOverlay.style.top = "21.5%";
+                tableOverlay.style.left = "0%";
+                tableOverlay.style.right = "0%";
+            }
+        }
+
+        tradeTypeSelect.addEventListener('change', updateTemplate);
+        sizeSelect.addEventListener('change', updateTemplate);
+
+        // Month and Year bindings
+        const monthInput = document.getElementById('monthInput');
+        const yearInput = document.getElementById('yearInput');
+        const monthDisplay = document.getElementById('monthDisplay');
+        const yearDisplay = document.getElementById('yearDisplay');
+
+        monthInput.addEventListener('input', (e) => monthDisplay.textContent = e.target.value);
+        yearInput.addEventListener('input', (e) => yearDisplay.textContent = e.target.value);
+
+        // Table Data State
+        let currentData = [
+            { name: "BUY NIFTY MAR 22600 CE", returns: "85.71%", duration: "INTRADAY" },
+            { name: "BUY SENSEX 12TH MAR 76300 PE", returns: "84.62%", duration: "INTRADAY" }
+        ];
+
+        const tableEditor = document.getElementById('tableEditor');
+        const addRowBtn = document.getElementById('addRowBtn');
+        const tableBodyDisplay = document.getElementById('tableBodyDisplay');
+
+        function renderTable() {
+            tableEditor.innerHTML = '';
+            tableBodyDisplay.innerHTML = '';
+
+            currentData.forEach((row, index) => {
+                // Editor Row
+                const edRow = document.createElement('div');
+                edRow.className = 'flex gap-2 mb-2 items-center';
+                edRow.innerHTML = `
+                    <input type="text" value="${row.name}" class="border p-1 w-1/2 text-xs" onchange="updateData(${index}, 'name', this.value)">
+                    <input type="text" value="${row.returns}" class="border p-1 w-1/4 text-xs" onchange="updateData(${index}, 'returns', this.value)">
+                    <input type="text" value="${row.duration}" class="border p-1 w-1/4 text-xs" onchange="updateData(${index}, 'duration', this.value)">
+                    <button class="text-red-500 hover:text-red-700" onclick="removeRow(${index})">X</button>
+                `;
+                tableEditor.appendChild(edRow);
+
+                // Display Row - Adjusted padding for better visual alignment with 0% left/right
+                const dispRow = document.createElement('tr');
+                dispRow.innerHTML = `
+                    <td class="py-2 pl-12 pr-4 text-left w-3/5 truncate">${row.name}</td>
+                    <td class="py-2 px-4 text-center text-green-400 w-1/5">${row.returns}</td>
+                    <td class="py-2 px-4 text-right pr-12 w-1/5">${row.duration}</td>
+                `;
+                tableBodyDisplay.appendChild(dispRow);
+            });
+        }
+
+        window.updateData = function(index, field, value) {
+            currentData[index][field] = value;
+            renderTable();
+        };
+
+        window.removeRow = function(index) {
+            currentData.splice(index, 1);
+            renderTable();
+        };
+
+        addRowBtn.addEventListener('click', () => {
+            currentData.push({ name: "NEW TRADE", returns: "0.00%", duration: "INTRADAY" });
+            renderTable();
+        });
+
+        // File Parsing Logic
+        document.getElementById('fileUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            showProgress();
+            updateProgress(10, 'Reading file...');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                updateProgress(40, 'Parsing data...');
+                setTimeout(() => {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+
+                    updateProgress(70, 'Processing trades...');
+                    setTimeout(() => processData(jsonData), 100);
+                }, 100);
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function processData(rows) {
+            if (rows.length < 2) {
+                hideProgress();
+                return;
+            }
+
+            // Simple heuristic to find columns
+            let headerRowIndex = 0;
+            let nameCol = -1, returnsCol = -1, durationCol = -1;
+
+            for(let i=0; i<Math.min(10, rows.length); i++) {
+                const row = rows[i];
+                for(let j=0; j<row.length; j++) {
+                    const cellStr = String(row[j] || '').toLowerCase();
+                    if(cellStr.includes('name') || cellStr.includes('script') || cellStr.includes('trade')) nameCol = j;
+                    if(cellStr.includes('return') || cellStr.includes('%') || cellStr.includes('profit')) returnsCol = j;
+                    if(cellStr.includes('duration') || cellStr.includes('type') || cellStr.includes('holding')) durationCol = j;
+                }
+                if (nameCol !== -1 && returnsCol !== -1) {
+                    headerRowIndex = i;
+                    break;
+                }
+            }
+
+            if (nameCol === -1) nameCol = 0;
+            if (returnsCol === -1) returnsCol = 1;
+            if (durationCol === -1) durationCol = 2;
+
+            let parsedTrades = [];
+
+            for (let i = headerRowIndex + 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row[nameCol]) continue;
+
+                let retStr = String(row[returnsCol] || '0').replace('%', '').trim();
+                let retVal = parseFloat(retStr) || 0;
+
+                let dur = String(row[durationCol] || '').toUpperCase().trim();
+                if (!dur) dur = "INTRADAY";
+
+                parsedTrades.push({
+                    name: String(row[nameCol]).trim(),
+                    returns: retVal,
+                    duration: dur
+                });
+            }
+
+            // Filter and Sort
+            const activeType = tradeTypeSelect.value;
+            let filteredTrades = parsedTrades;
+
+            if (activeType === "HZ") {
+                filteredTrades = parsedTrades.filter(t => t.duration.includes('HERO') || t.duration.includes('ZERO'));
+            } else if (activeType === "INTRA") {
+                filteredTrades = parsedTrades.filter(t => t.duration.includes('INTRA'));
+            } else if (activeType === "BTST") {
+                filteredTrades = parsedTrades.filter(t => t.duration.includes('BTST'));
+            }
+            // "ALL" doesn't filter out explicitly based on current logic, just sorts
+
+            // Sort by returns descending
+            filteredTrades.sort((a, b) => b.returns - a.returns);
+
+            // Take top 5
+            filteredTrades = filteredTrades.slice(0, 5);
+
+            // Update UI State
+            currentData = filteredTrades.map(t => ({
+                name: t.name,
+                returns: t.returns.toFixed(2) + "%",
+                duration: t.duration
+            }));
+
+            renderTable();
+            updateProgress(100, 'Complete!');
+            hideProgress();
+        }
+
+        // Image Download Logic
+        downloadBtn.addEventListener('click', async () => {
+            showProgress();
+            updateProgress(20, 'Preparing canvas...');
+
+            // Temporarily remove scaling for high-res capture
+            const originalTransform = previewContainer.style.transform;
+            previewContainer.style.transform = 'none';
+
+            // Slight delay to ensure DOM is updated before capture
+            await new Promise(r => setTimeout(r, 100));
+            updateProgress(60, 'Generating image...');
+
+            html2canvas(previewContainer, {
+                useCORS: true,
+                scale: 2, // 2x scale for higher resolution
+                backgroundColor: '#000000',
+                logging: false
+            }).then(canvas => {
+                updateProgress(90, 'Finalizing download...');
+                // Restore scaling
+                previewContainer.style.transform = originalTransform;
+
+                const link = document.createElement('a');
+                link.download = `Trade_Image_${tradeTypeSelect.value}_${sizeSelect.value}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+
+                updateProgress(100, 'Done!');
+                hideProgress();
+            }).catch(err => {
+                console.error("Error generating image", err);
+                previewContainer.style.transform = originalTransform;
+                hideProgress();
+                alert("Failed to generate image.");
+            });
+        });
+
+        // Initialize
+        updateTemplate();
+        renderTable();
+    </script>
+</body>
+</html>

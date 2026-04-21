@@ -1,0 +1,4 @@
+127.0.0.1 - - [21/Apr/2026 13:45:07] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 13:45:07] "GET /templates/HZ%204.png HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 13:45:08] "GET /templates/OP-3-INTRA.png HTTP/1.1" 200 -
+127.0.0.1 - - [21/Apr/2026 13:45:08] "GET /templates/HZ-1,%209-16-1.png HTTP/1.1" 200 -
